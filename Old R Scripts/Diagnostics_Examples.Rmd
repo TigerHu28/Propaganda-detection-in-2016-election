@@ -1,0 +1,237 @@
+---
+title: "Milestone3"
+author: "Paul Franklin"
+date: "9/29/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(lubridate)
+library(dplyr)
+library(tibble)
+
+util = read.csv('State_Drug_Utilization_Data_2019.csv',header=TRUE)
+nadac = read.csv('NADAC__National_Average_Drug_Acquisition_Cost_.csv',header=TRUE)
+
+util_less = util[,c(-3:-7, -9,-12,-14 -15, -16, -17, -18, -19)] #all 2019 quarter1, so need to adjust nadac accordingly.
+nadac_less = nadac[,c(-12, -11, -8 -6)]
+
+dates = nadac_less$Effective_Date
+nadac_less$dates = mdy(dates)
+nadac_less_19 <- subset(nadac_less, dates >= "2019-01-01" & dates <= "2019-03-31")
+data = merge(util_less, nadac_less_19, by="NDC") 
+table(data$Classification_for_Rate_Setting)
+data.new=as_tibble(data)
+data.new=data.new[!(data.new['State'] == 'XX'),]
+table(data.new$Classification_for_Rate_Setting)
+data.new.distinct=distinct(data.new)
+
+
+
+#table(data.new.distinct$Classification_for_Rate_Setting)
+#boxplot(data.new.distinct$NADAC_Per_Unit~data.new.distinct$Classification_for_Rate_Setting)
+#no.out=filter(data.new.distinct, NADAC_Per_Unit<50)
+#boxplot(no.out$NADAC_Per_Unit~no.out$Classification_for_Rate_Setting)
+
+
+
+data_tib = na.omit(distinct(as_tibble(data)))
+data_tib1 = data_tib[!(data_tib['State'] == 'XX'),]
+#table(data_tib1$Classification_for_Rate_Setting)
+
+
+#Plotting
+par(mfrow=c(2,3))
+plot(data_tib1$Units.Reimbursed, data_tib1$NADAC_Per_Unit,xlim=c(0,3000000),xlab='Units Reimbursed  (In milligrams, grams, and each)',ylab='NADAC Per Unit',main='Figure 1: Units Reimbursed vs NADAC Per Unit')
+plot(data_tib1$Number.of.Prescriptions, data_tib1$NADAC_Per_Unit,xlim=c(0,800000), xlab='Number of Prescriptions',ylab='NADAC Per Unit',main='Number of Prescriptions vs NADAC Per Unit')
+plot(data_tib1$Medicaid.Amount.Reimbursed, data_tib1$NADAC_Per_Unit, xlab='Medicaid Amount Reimbursed',ylab='NADAC Per Unit',main='Medicaid Amount Reimbursed vs NADAC Per Unit')
+plot(data_tib1$Corresponding_Generic_Drug_NADAC_Per_Unit, data_tib1$NADAC_Per_Unit, xlab='Corresponding Generic Drug NADAC Per Unit',ylab='NADAC Per Unit',main='Figure 2: Corresponding Generic Drug NADAC Per Unit vs NADAC Per Unit')
+hist(data_tib1$NADAC_Per_Unit, main='Histogram of NADAC Per Unit',xlab='Histogram of NADAC Per Unit')
+boxplot(data_tib1$NADAC_Per_Unit ~ data_tib1$OTC, xlab='OTC',ylab='NADAC Per Unit',main='Figure 3: NADAC Per Unit by OTC Class')
+```
+
+
+
+```{r, echo=FALSE}
+two.class<-ifelse(data_tib1$OTC =="N",0,1)
+two.class<-factor(two.class)
+data.tib = cbind(data_tib1, two.class)
+
+
+attach(data.tib)
+library(MASS) #for boxcox
+result1 <- lm(NADAC_Per_Unit~Units.Reimbursed+Medicaid.Amount.Reimbursed+Number.of.Prescriptions+Corresponding_Generic_Drug_NADAC_Per_Unit+two.class)
+summary(result1)
+anova(result)
+plot(result1)
+
+
+
+#IVs vs. residuals
+par(c(2, 4))
+plot(result1$fitted.values, result1$residuals)
+boxplot(two.class, result1$residuals)
+boxcox(result1, lambda=seq(.1, .2, 1/100)) #transform: log of y if lambda=0 or y^lambda otherwise. trans the y when the variance is nonconstant. 
+
+#ask: For adjustment suggestions based on these plots, where to start with IV transformations, whether to make a train and test set. 
+#Dr. Woo:
+#Include other predictors we hadn't add
+#Take out ivs vs resids, boxcox lambda option, 
+?boxcox
+```
+
+```{r}
+result2 <- lm((NADAC_Per_Unit^.155)~Units.Reimbursed+Number.of.Prescriptions+Medicaid.Amount.Reimbursed+(Corresponding_Generic_Drug_NADAC_Per_Unit)+two.class)
+summary(result2)
+anova(result2)
+plot(result2)
+
+plot(NADAC_Per_Unit^.155, Corresponding_Generic_Drug_NADAC_Per_Unit)
+plot(NADAC_Per_Unit^.155, Units.Reimbursed)
+plot(NADAC_Per_Unit^.155, Number.of.Prescriptions)
+plot(NADAC_Per_Unit^.155, Medicaid.Amount.Reimbursed)
+boxplot(NADAC_Per_Unit^.155, two.class)
+
+table(two.class)
+
+
+
+#IVs vs. residuals
+par(c(2, 4))
+plot(result2$fitted.values, result2$residuals)
+boxplot(two.class, result2$residuals)
+boxcox(result2, lambda=seq(.95, .98, .001))
+#boxcox(result2) 
+#1. fix nonconst variance before transforming IVs. Future: Narrow down to exclude outliers or fit IVs with ch. 7 techniques., maybe adding knots. The poor R^2 is due to the outliers.
+```
+
+
+
+```{r}
+result3 <- lm((NADAC_Per_Unit^.155)~Units.Reimbursed+Number.of.Prescriptions+Medicaid.Amount.Reimbursed+Corresponding_Generic_Drug_NADAC_Per_Unit+(Corresponding_Generic_Drug_NADAC_Per_Unit^2)+two.class)
+summary(result3)
+anova(result3)
+plot(result3)
+#IVs vs. residuals
+par(c(2, 4))
+plot(result3$fitted.values, result3$residuals)
+boxplot(two.class, result3$residuals)
+boxcox(result3, lambda=seq(.1, .2, 1/200))
+#boxcox(result2) 
+```
+```{r}
+plot(result3)
+```
+
+
+
+# Milestone 6
+
+```{r}
+##Fitting Regression Trees
+library(MASS)
+#install.packages('tree')
+library(tree) ##to fit trees
+library(randomForest) ##for random forests (and bagging)
+library(gbm) ##for boosting
+#install.packages('ISLR')
+library(ISLR)
+#install.packages('ROCR')
+library(ROCR)
+
+#(NADAC_Per_Unit^.15)~Units.Reimbursed+Number.of.Prescriptions+Medicaid.Amount.Reimbursed+Corresponding_Generic_Drug_NADAC_Per_Unit+two.class)
+#data.tib
+
+head(data.tib)
+df=as.data.frame(data.tib)
+df=df[,c(5:8, 11, 18)]
+df.n=apply(df, 2, as.numeric)
+
+set.seed(080597)
+sample.data<-sample.int(nrow(df.n), floor(.50*nrow(df.n)), replace = F)
+train2<-df.n[sample.data, ]
+test2<-df.n[-sample.data, ]
+
+pred.test=test2[,'NADAC_Per_Unit']
+
+##Use recursive binary splitting on training data
+train2=as.data.frame(train2)
+names(train2)[6]="Generic_NADAC_Per_Unit"
+tree.class.train<-tree(NADAC_Per_Unit~Units.Reimbursed+Number.of.Prescriptions+Medicaid.Amount.Reimbursed+Corresponding_Generic_Drug_NADAC_Per_Unit+two.class, data=train2)
+summary(tree.class.train)
+tree.class.train
+?tree
+##plot tree
+plot(tree.class.train)
+text(tree.class.train, cex=0.75, pretty=0)
+
+```
+```{r}
+set.seed(1) 
+#Cross validation
+cv.reg<-cv.tree(tree.class.train, K=10)
+##plot of dev against size
+plot(cv.reg$size, cv.reg$dev,type='b', xlab='Terminal Nodes', ylab='Residual Mean Deviance')
+##size of tree chosen by pruning
+set.seed(1) 
+trees.num.reg<-cv.reg$size[which.min(cv.reg$dev)]
+trees.num.reg  
+
+##fit tree with size chosen by pruning
+set.seed(1) 
+prune.reg<-prune.tree(tree.class.train, best=3)
+
+##plot pruned tree
+plot(prune.reg)
+text(prune.reg, cex=0.75, pretty=0)
+summary(prune.reg)
+prune.reg
+
+```
+
+```{r}
+##find predicted response for test data using the unpruned tree
+test2=as.data.frame(test2)
+names(test2)[6]="Generic_NADAC_Per_Unit"
+tree.pred.test<-predict(tree.class.train,newdata=test2[,-5])
+mse.tree=mean((pred.test-tree.pred.test)^2, na.rm=TRUE)
+sqrt(mse.tree)
+
+##prediction based on pruned tree for test data using the pruned tree
+tree.pred.prune<-predict(prune.reg, newdata=test2[,-5])
+mse.tree.prune=mean((pred.test-tree.pred.prune)^2, na.rm=TRUE)
+sqrt(mse.tree.prune) #pruning increased the error rate!!
+
+
+```
+
+```{r}
+set.seed(34702)
+train2
+bag.reg<-randomForest(NADAC_Per_Unit~., data=train2, mtry=7, importance=TRUE, na.action = na.omit)
+head(train2)
+##importance measures of predictors
+#importance(bag.reg)
+##graphical version
+varImpPlot(bag.reg)
+
+##test accuracy with bagging
+pred.bag<-predict(bag.reg, newdata=test2[,-5])
+mse.bag=mean((pred.test-pred.bag)^2, na.rm=TRUE)
+mse.bag
+
+```
+
+
+
+
+```{r}
+10^seq(10,-2,length=100)
+log(409)
+```
+
+

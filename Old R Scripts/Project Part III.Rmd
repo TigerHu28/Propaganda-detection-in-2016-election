@@ -1,0 +1,300 @@
+---
+title: 'Project Part III: Russian Political Influence'
+author: "Paul Franklin"
+date: "12/5/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=3, fig.height=2)
+library(stringr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+#install.packages("tidycensus")
+library(tidycensus)
+setwd('/Users/Paul/Desktop/3080- Data to Knowledge/')
+```
+ 
+# Background information
+  
+  In 2016, Russia's Internet Research Agency (IRA) conducted a well-funded social media operation to influence the U.S. presidential election. The IRA exploited several social media platforms, one of which was Facebook. The House Permanent Select Committee on Intelligence (HPSC) uncovered these facts during its open hearings with social media companies in November 2017. In cooperation with the Committee, Facebook conducted an internal investigation and identified 3516 advertisements purchased by the IRA. These ads were viewed by 11.4 million American users. The owner of russian-ad-explorer.github.io compiled the pdf descriptions of these ads and grouped them to make this data set.
+  
+# Question of Interest
+
+ I am curious as to whether particular areas were more impacted by the Russian advertisements than others. Given data on clicks, locations in which the ads appeared, and population, I should be able to sum the populations of the areas targeted by each ad ($\ N_h$), then divide the click count for an ad by that sum. This should yield a fair estimate of clicks garnered per person targeted. This measure may quantify the impact of an ad relative to the number of people targeted. Further, the ratio could show which ads were most influential, and which locations were most vulnerable to propoganda. I suspect that these findings could be generalized to future instances of foreign propoganda attacks. If the ratio relationship does not hold, however, a test to compare the click distribution of two areas may be conducted. I hope that the conclusions will lead to protections for at-risk areas of the U.S. during future elections.
+  
+# Data Description
+
+Each advertisement has its own row in the raw data set. Each column represents a characteristic of those ads. The compiler didn't define every column, so I will have to infer some meanings. Although the advertisement data had numerous variables describing each ad, I am most interested in 
+  1. the number of clicks each ad received, (The number of times that ad was clicked while it was online),and
+  2. the location(s) targeted by each ad (including the city, state, and country in which people clicked).
+In addition, I found the population estimates for most of the unique locations named in the ad data set by importing data from the 'tidycensus' package, which required permission from the U.S. census via an 'API' Key. However, the census data only provided state and county level populations, while the ad set refers to many cities. To match county populations with the cities they contain, I found the 'uscities.csv' set (Reference 3). This increased the number of ads for which I could calculate target population sums.
+
+# Data Cleaning
+
+I have hidden my cleaning code because the document would exceed the page limit if I were to include it. Essentially, I had to parse each string in the 'Location' column to find each unique location targeted by each ad. This way, I could merge the population data with the ad data using every location.
+
+```{r, include=FALSE}
+ads = read.csv("FacebookAds.csv")
+  locs=as.matrix(ads$Location)
+  ads[,"Location"]=apply(locs, 1, as.character)
+  #drop irrelevant
+  ads=ads[,c('AdID', 'Clicks', 'Location')]
+  #only want rows with 'United States' or state names in location col:
+  ads=ads[grep("United States", locs, fixed=TRUE),]
+  lvls=unique(ads$Location)
+  #remove rows/ads that only appeared nationally
+  ads=subset(ads, Location!="United States")
+  ads=subset(ads, Location!='Living In: United States')
+  ads=subset(ads, Location!='Recently In: United States')
+  ads=subset(ads, Location!='United Kingdom, United States')
+  lvls=unique(ads$Location)
+  #delete 'united states', 'Living in', and 'Recently In' parts of locations:
+  no.us=as.vector(ads$Location) #fix a strange case
+  no.us[6]="United States: Baltimore, Maryland: Ferguson, St. Louis, Missouri; Cleveland, Ohio"
+  no.us=str_replace(no.us, "United States:", "")
+  no.us=str_replace(no.us, "United States", "")
+  no.us=str_replace(no.us, "Living In:", "")
+  no.us=str_replace(no.us, "Recently In:", "")
+  no.us=str_replace(no.us, "Astoria", "New York")
+  no.us=str_replace_all(no.us, 'Latitude .....', "")
+  no.us=str_replace_all(no.us, 'Longitude ......', '')
+  no.us=str_replace_all(no.us, " km", '')
+  no.us=str_replace_all(no.us, " mi", '')
+  no.us=str_replace_all(no.us, "[[:digit:]]", "")
+  no.us=str_replace_all(no.us, '[.]', '')
+  no.us=str_replace_all(no.us, '[-]', '')
+  no.us=str_replace_all(no.us, "[[+]]", "")
+  no.us=str_replace_all(no.us, " [(]", ",")
+  no.us=str_replace_all(no.us, "[)]", "")
+  no.us=str_replace_all(no.us, "[:]", "/")
+  no.us=str_replace_all(no.us, "[;]", "/") #also change "i," to "i/"
+  no.us=str_replace_all(no.us, "i,", "i/")
+  no.us=str_replace_all(no.us, "[,]", "")
+  no.us=str_trim(no.us, side='both')
+  #splitting and rejoining
+  locs.split=str_split(no.us, "/", simplify = TRUE)
+  ads=cbind(ads, locs.split)
+  less=as.matrix(ads[,-3])
+  #stack so I can join to pop data
+    one=less[,c(1, 2, 3)]
+    two=less[,c(1, 2, 4)]
+    three=less[,c(1,2,5)]
+    four=less[,c(1,2,6)]
+    five=less[,c(1,2,7)]
+    six=less[,c(1,2,8)]
+    seven=less[,c(1,2,9)]
+    eight=less[,c(1,2,10)]
+    nine=less[,c(1,2,11)]
+    ten=less[,c(1,2,12)]
+    elev=less[,c(1,2,13)]
+  
+    stacked=rbind(one, two, three, four, five, six, seven, eight, nine, ten, elev)
+    stacked=as.data.table(stacked)
+    names(stacked)[3]<-'Location'
+    #removing blank rows
+    stack=subset(stacked, str_length(stacked$Location)!=0)
+    loc.vect=as.character(stack$Location)
+    loc.vect=str_trim(loc.vect, side='both')
+    loc.vect=sapply(1:length(loc.vect), function(x) as.factor(loc.vect[x]))
+    lvls=levels(loc.vect)
+    stack$Location=loc.vect
+  #population data
+  
+    #census_api_key("002042b0954dcb772d496634776f74eac9279a88", install = TRUE)
+    #data("fips_codes")
+    #dat=force(fips_codes)
+    #dat
+   #city/county level
+    pop.co=get_estimates(geography='county', product='population', year=2016, keep_geo_vars = TRUE)
+    pop.co=pop.co[str_which(pop.co$variable, "POP"),] #lose density data
+    pop.co$NAME=str_replace(as.vector(pop.co$NAME), "Fulton County, Georgia", "Atlanta City, Georgia")
+    pop.co$NAME=str_replace(as.vector(pop.co$NAME), "Winn Parish, Louisiana", "Atlanta City, Louisiana")
+    pop.co$NAME=str_replace(as.vector(pop.co$NAME), " County", "")
+    pop.co$NAME=str_replace(as.vector(pop.co$NAME), "[,]", "")
+    pop.co$NAME=str_replace(as.vector(pop.co$NAME), "[.]", "")
+    pop.co=as.matrix(pop.co[,c(1,4)])
+    cit.co=read.csv('uscities.csv')
+    cit.co=cit.co[,c(1,4, 8)]
+    cit=cit.co$city
+    st=cit.co$state_name
+    coun=cit.co$county_name_all
+    cit.state=str_c(cit, st, sep=" ")
+    coun.state=str_c(coun, st, sep=" ")
+    cit.co=cbind(cit.state, coun.state)
+    colnames(cit.co)=c('cit.state', "NAME")
+    pop.co=merge(pop.co, cit.co, by="NAME")
+    #state level
+    pop.s=get_estimates(geography='state', product='population', year=2016)
+    pop.s=pop.s[str_which(pop.s$variable, "POP"),] #lose density data
+    pop.s=as.matrix(pop.s[,c(1,4)])
+    names(pop.co)=c('NAME', 'value', "NAME") #city was the second col
+    popscity=rbind(pop.s, pop.co[,c(2,3)])
+    popscounty=rbind(pop.s, pop.co[,c(2,1)])
+  #join finally
+   names(stack)=c("AdID", "Clicks", 'NAME')
+   pop.ad=merge(stack, popscity, by='NAME', all.x=TRUE)
+   pop.ad.no=subset(pop.ad, is.na(value)==TRUE)
+   pop.ad.more=merge(pop.ad.no, popscounty, by='NAME')
+   pop.ad.no.na=subset(pop.ad, is.na(value)!=TRUE)
+   pop.ad.more=pop.ad.more[,-4]
+   names(pop.ad.more)=c("NAME","AdID","Clicks","value")
+   pop.ad=rbind(pop.ad.no.na, pop.ad.more)
+```
+  
+# Data Transformation (Code Hidden)
+   
+```{r, include=FALSE}
+#Calculating clicks per person of targeted area for each ad to measure its influence.
+  #First, need to sum the number of people in every location targeted by ad x.
+   clicks.ppl=apply(pop.ad[,c(3,4)], 2, as.numeric)
+   cl.p=cbind(pop.ad[,c(1,2)], clicks.ppl[,c(1,2)]);id.pop=cl.p[,c(2,4)]
+   id.pop$AdID=str_trim(id.pop$AdID, side = 'both');ids=as.matrix(id.pop$AdID)
+   adi.tbl=subset(id.pop, AdID=='95');targets.i=sum(adi.tbl$value)
+   summer=function(x){
+     adi.tbl=subset(id.pop, AdID==x)
+     targets.i=sum(adi.tbl$value)
+     targets.i
+   }
+   no.targets=apply(ids, 1, summer)
+   #divide number of clicks by number of targets
+   cpp=as.vector(cl.p$Clicks)/no.targets;adid.cpp=cbind(cl.p$AdID, cpp)
+   id.cpp.unique=as.data.frame(adid.cpp);id.cpp.unique=distinct(id.cpp.unique)
+   names(id.cpp.unique)=c("AdID", "CPP")
+   id.cpp=apply(as.matrix(id.cpp.unique[,2]), 1, as.numeric)
+   id.cpp.unique$CPP=id.cpp;colnames(adid.cpp)=c("AdID", 'CPP')
+   names.cpp=merge(adid.cpp, cl.p, by='AdID')
+   colnames(names.cpp)=c("AdID", "CPP", "NAME", "Clicks", "Population of NAME")
+   these.locs=as.matrix(names.cpp$NAME)
+   va=names.cpp[grep("Virginia", these.locs, fixed=TRUE),]
+   va=subset(va, NAME!='Virginia City Nevada')
+   va=subset(va, NAME!='West Virginia');va=distinct(va);va=as.matrix(va)
+   va.cpp=as.matrix(va[,2]);va.cpp=apply(va.cpp, 1, as.numeric)
+   va.cpp=as.data.frame(va.cpp);names(va.cpp)='CPP'
+   # I also need to make a table of the rest of the states without Virginia.
+   no.va=names.cpp[grep("Virginia", these.locs, fixed=TRUE, invert = TRUE),]
+   no.va.cpp=as.matrix(no.va$CPP);no.va.cpp=apply(no.va.cpp, 1, as.numeric)
+   no.va.cpp=as.data.frame(no.va.cpp);names(no.va.cpp)='CPP'
+```
+ 
+# Exploratory Data Analysis
+ 
+## Figure 1: Plotting histogram of clicks per person for every ad for which we have data.
+
+Due to the sheer size of the set, I will just compare Virginia to the rest of the country, and try to test whether it was unusually more or less influenced by propoganda.
+   
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+ggplot(data=id.cpp.unique, aes(x=CPP))+geom_histogram()+labs(y='Number of Ads')
+```
+Since this population is heavily skewed, the median will be themost reliable measure of the center of the distribution.
+
+## Figure 2: The histogram of clicks per person for the ads that did not appear in Virginia
+   
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+ ggplot(data=no.va.cpp, aes(x=CPP))+geom_histogram()+labs(y='Number of Ads')
+   #The median of the population without Virginia is
+   med.pop=median(no.va.cpp$CPP, na.rm = TRUE);med.pop
+```
+  
+## Figure 3: Histogram of clicks per person for each ad seen in Virginia:
+  
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+ggplot(data=va.cpp, aes(x=CPP))+geom_histogram()+labs(y='Number of Ads')
+    med.va=median(va.cpp$CPP);med.va
+```
+The typical ad had 0 clicks per person targeted in Virginia.
+    
+# Analysis:
+  
+I would like to know whether the population median of clicks per person is an accurate estimate of clicks per person for the typical ad that targeted Virginia.
+  
+I initially considered a ratio estimation method for my analysis, because I was interested in estimating the total number of clicks in each target location. To do this, I considered taking a cluster sample of advertisements, and treat them as primary units. Their target locations could be the secondary units. I do not think cluster sampling estimation has assumptions about the overall/secondary unit population, which is good  in this situation given the highly skewed distribution of clicks. This method would be useful for producing good population estimates (maybe even for individual cities), but I would not be sure what analytical test to perform on these estimates to conclude whether one location had many more clicks than another, so I ruled out cluster sampling estimation as an analysis technique.
+  
+Next, I considered generating a bootstrap confidence interval for the median, but the tail of the distribution of clicks seemed to contain more than a few observations, so I ruled against this.
+  
+Finally, I considered the Wilcoxon Rank-Sum Test. It compares the medians of two continuous distributions, which are assumed to have the same shape and are independent. To meet these assumptions, I separated the ads targeting Virginia from the ads targeting the rest of the country. Further, I generated histograms of these two populations to make sure they had about the same shape. Referring to Figures 2 and 3, their shapes look similar, especially in heavy skewness right. Further, since `med.va` is less than `med.pop`, I will try a lower tailed test for detecting whether the median of CPP is really less than the median of the rest of the country.
+  
+First, I will need to sample both populations with replacement.
+
+```{r, echo=FALSE}
+va.samp=sample_n(va.cpp, 25, replace=TRUE)
+nova.samp=sample_n(no.va.cpp, 25, replace=TRUE)
+```
+$\ H_0: M_1=M_2 vs. H_a: M_1 < M_2$
+The alternative hypothesis states that the distribution of CPP in Virginia is shifted to the left of the distribution of the nation. The null hypothesis is no shift.
+    
+```{r, warning=FALSE, echo=FALSE}
+wc.1=wilcox.test(va.samp$CPP, nova.samp$CPP, alternative='less');wc.1
+```
+   
+Here is another Rank-Sum analysis, but without sampling. This is just comparing Virginia's population distribution CPP against that of the rest of the country.
+    
+```{r, warning=FALSE, echo=FALSE}
+wc.2=wilcox.test(va.cpp$CPP, no.va.cpp$CPP, alternative='less');wc.2
+```
+
+I also conducted the Wilcoxon Sign-Rank test, because even though it has an assumption that the population be symmetrically distributed, we have seen examples that employ it when the population is skewed right.
+    
+```{r, warning=FALSE, echo=FALSE}
+w.3=wilcox.test(va.cpp$CPP, mu=med.pop, alternative='less');w.3
+```
+
+# Conclusions
+    
+## First Wilcoxon Rank-Sum Test:
+     
+Since our p-value is `wc.1$p.value`, we reject the null hypothesis at the .05 significance level, and conclude that the Clicks per person of ads in Virginia in this sample were typically lower than that of sampled ads elsewhere. This could be evidence that ads targeted at Virginia were less influential.
+    
+## Second Wilcoxon Rank-Sum Test:
+  
+Since the p-value of this test is `wc.2$p.value`, we reject the null hypothesis at the .05 significance level. There is evidence that Russian ads that targeted Virginia were significantly less influential than the typical Russian advertisement, when measured in clicks per person in the target area.
+    
+## Wilcoxon Sign-Rank Test:
+    
+The p-value of this test is `w.3$p.value`, so we fail to reject the null at the .05 significance level. Therefore, there is no evidence that Virginia's median is lower. However, in light of the previous tests, this p-value may be artificially inflated due to the violated assumption of distribution symmetry.
+
+Even though I had to narrow my analysis to just Virginia, I hope others will use this cleaned national data to explore propoganda influence on other areas as well. This may reveal communities that were influenced at a significantly higher rate than others. Facebook and law enforcement might focus protections on such areas during the next election.
+  
+\clearpage
+
+# References
+
+  Required R Packages:
+  
+```{r}
+# library(stringr)
+# library(dplyr)
+# library(data.table)
+# library(ggplot2)
+# install.packages("tidycensus")
+# library(tidycensus)
+```
+  
+  1. Russian ad data: <https://www.kaggle.com/paultimothymooney/russian-political-influence-campaigns>.
+  2. Context of Russian ad data:<https://www.intelligence.house.gov/uploadedfiles/hpsci_minority_exhibits_memo_11.1.17.pdf>. 
+  3. City-County reference data: <https://simplemaps.com/data/us-cities>
+  4. More Detailed data descriptions: <https://russian-ad-explorer.github.io/about>
+  5. Tidy census data: <https://github.com/walkerke/tidycensus> OR type ?tidycensus after installing the package.
+  
+  
+  
+# Appendix
+ 
+```{r}
+#scatter of clicks vs. number of people targeted
+   
+   tar.clicks=as.data.frame(cbind(no.targets, cl.p$Clicks))
+   names(tar.clicks)=c("People_Targeted", "Clicks")
+   ggplot(data=tar.clicks, aes(x=People_Targeted, y=Clicks))+geom_point()
+   
+  #removing outliers
+   
+   t.c.less=subset(tar.clicks, People_Targeted<=10000000)
+   ggplot(data=t.c.less, aes(x=People_Targeted, y=Clicks))+geom_point()
+   
+```
+  
+
+ 
+
