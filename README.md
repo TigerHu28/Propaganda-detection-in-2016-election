@@ -8,3 +8,4 @@ Links: https://www.researchgate.net/publication/341435222_Russian_Facebook_Propa
   https://www.researchgate.net/publication/341879690_Russian_Facebook_Propaganda_Detection_with_Classification_Models
 
 To contact any of the creators of this project, our email address would be our computing ID + @virginia.edu. The computing ID is in parentheses after our names. 
+
